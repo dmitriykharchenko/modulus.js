@@ -66,6 +66,9 @@ var modulus = (function(_, window, undefined){
           action.apply(sandbox, sandbox_arguments);
         });
       };
+      if(is_test_mode){
+        sandbox.debug = debug;
+      }
       _.each(trailers, function(trailer){
         sandbox = trailer(sandbox, description, actions) || sandbox;
       });
