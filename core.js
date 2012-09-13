@@ -59,16 +59,15 @@ var modulus = (function(_, window, undefined){
     });
 
     var create_sandbox = function(description){
+      var actions = [];
       var sandbox = function(){
         var sandbox_arguments = arguments;
-        _.each(sandbox.actions, function(action){
+        _.each(actions, function(action){
           action.apply(sandbox, sandbox_arguments);
         });
       };
-      sandbox.actions = [];
-
       _.each(trailers, function(trailer){
-        sandbox = trailer(sandbox, description) || sandbox;
+        sandbox = trailer(sandbox, description, actions) || sandbox;
       });
       return sandbox;
     };
@@ -227,31 +226,30 @@ var modulus = (function(_, window, undefined){
 
    var modules = (function(){
     var relates = {};
+    var alliaces = {};
     var _helpers = {
       is_valid_name: function(name){
         return _.indexOf(reserved_names, name) < 0;
       },
       cast_require: function(description){
         description.require = description.require || [];
+        description.alliaces = {};
         var require_extention = [];
         var self = this;
-        var alliaces = {};
-        _.each(description.require, function(module_name){
-          if(!_.isString(module_name)){
-            _.extend(alliaces, module_name);
-            module_name = _.keys(module_name)[0];
-          }
-          if(relates[module_name]){
-            require_extention = require_extention.concat(relates[module_name]);
-          }
-        });
-        description.alliaces = alliaces;
-        description.require = description.require.concat(require_extention);
         if(description.config){
           var config = {};
           config[description.config] = "config";
           description.require.push(config);
         }
+        _.each(description.require, function(module_name){
+          if(!_.isString(module_name)){
+            _.extend(description.alliaces, module_name);
+          }
+          if(relates[module_name]){
+            require_extention = require_extention.concat(relates[module_name]);
+          }
+        });
+        description.require = description.require.concat(require_extention);
         if(description.parent){
           description.require.push(description.parent);
         }
@@ -334,13 +332,17 @@ var modulus = (function(_, window, undefined){
       }
     };
 
-    sandboxes.trail(function(sandbox, description){
+    sandboxes.trail(function(sandbox, description, actions){
       sandboxes_tree.add(description, sandbox);
       if(sandbox.name !== ""){
         return;
       }
 
-      sandbox.actions.push(function(module_path, module, new_description){
+      sandbox.create_aliace = function(aliace){
+        alliaces[this.path] = aliace;
+      };
+
+      actions.push(function(module_path, module, new_description){
         if(!_.isString(module_path) || !_.isFunction(module)){
           return;
         }
@@ -357,8 +359,9 @@ var modulus = (function(_, window, undefined){
           _.each(modules, function(info){
             var root_name = info.path.split(".")[0];
             module_sandbox[root_name] = sandboxes_tree.get(root_name).module;
-            if(description.alliaces[info.path]){
-              module_sandbox[alliaces[info.path]] = info.module;
+            var alliace = description.alliaces[info.path] || alliaces[info.path];
+            if(alliace){
+              module_sandbox[alliace] = info.module;
             }
           });
           module_sandbox.module = create(module_sandbox, module);
