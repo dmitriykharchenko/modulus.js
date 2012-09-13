@@ -235,7 +235,6 @@ var modulus = (function(_, window, undefined){
   }());
 
    var modules = (function(){
-    var relates = {};
     var alliaces = {};
     var _helpers = {
       is_valid_name: function(name){
@@ -253,9 +252,6 @@ var modulus = (function(_, window, undefined){
         _.each(description.require, function(module_name){
           if(!_.isString(module_name)){
             _.extend(description.alliaces, module_name);
-          }
-          if(relates[module_name]){
-            require_extention = require_extention.concat(relates[module_name]);
           }
         });
         description.require = description.require.concat(require_extention);
@@ -278,9 +274,6 @@ var modulus = (function(_, window, undefined){
         description.path = path;
         description.parent = sandbox_path.join(".");
         this.cast_require(description);
-        if(description.relate){
-          relates[description.path] = description.relate;
-        }
         return description;
       }
     };
