@@ -411,3 +411,5 @@ var modulus = (function(_, window, undefined){
     name: "core"
   });
 }(_, window));
+
+window.M = modulus;
