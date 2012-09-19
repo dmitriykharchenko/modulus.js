@@ -443,9 +443,12 @@ var modulus = (function(_, window, undefined){
     var tests_data = {};
     reserved_names.push("test");
     var test = function(test_obj){
-      tests_data[this.path] = {
-        test_data: test_obj,
-        sandbox: this
+      test_obj.sandbox = this;
+      tests_data[this.path] = test_obj;
+    };
+    test.get = function(path){
+      return tests_data[path] || {
+        sandbox: modules.get(path)
       };
     };
     sandboxes.trail(function(sandbox){
