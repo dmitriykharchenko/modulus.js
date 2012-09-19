@@ -1,6 +1,6 @@
 //core
 var modulus = (function(_, window, undefined){
-  var is_test_mode = window.TESTMODE || /_testmode_/g.test(location.search) || false;
+  var is_test_mode = true || window.TESTMODE || /_testmode_/g.test(location.search) || false;
   var reserved_names = [];
 
   var debug = !is_test_mode ? function(){} : (function(){
@@ -66,9 +66,7 @@ var modulus = (function(_, window, undefined){
           action.apply(sandbox, sandbox_arguments);
         });
       };
-      if(is_test_mode){
-        sandbox.debug = debug;
-      }
+      sandbox.debug = debug;
       _.each(trailers, function(trailer){
         sandbox = trailer(sandbox, description, actions) || sandbox;
       });
@@ -153,7 +151,8 @@ var modulus = (function(_, window, undefined){
       if(params.is_wait){
         var waiter = handler;
         var event_data = {};
-        handler = function(data, event){
+        handler = function(data){
+          var event = _.last(arguments);
           all_events = _.without(all_events, event.name);
           event_data[event.name] = data;
           if(all_events.length === 0){
@@ -172,7 +171,15 @@ var modulus = (function(_, window, undefined){
 
     var handler_call = function(handler, name, data){
       var start = +new Date();
-      handler(data, {name: name});
+      var event_data = {name: name};
+      var handler_params = [];
+      if(_.isArray(data)){
+        handler_params = data;
+      } else {
+        handler_params.push(data);
+      }
+      handler_params.push(event_data);
+      handler.apply(event_data, handler_params);
       debug("logs", "execution time", +new Date() - start, name, handler);
     };
 
@@ -213,8 +220,8 @@ var modulus = (function(_, window, undefined){
           });
         });
       },
-      wait: function(events_list, handler){
-        return !!events_list ? events.bind(events_list, handler, {is_wait: true}) : handler({});
+      wait: function(events_list, handler, options){
+        return !!events_list ? events.bind(events_list, handler, _.extend(options || {}, {is_wait: true})) : handler({});
       }
     };
 
@@ -240,9 +247,8 @@ var modulus = (function(_, window, undefined){
         var require_extention = [];
         var self = this;
         if(description.config){
-          var config = {};
-          config[description.config] = "config";
-          description.require.push(config);
+          alliaces[description.config] = "config";
+          description.require.push(description.config);
         }
         _.each(description.require, function(module_name){
           if(!_.isString(module_name)){
@@ -285,58 +291,32 @@ var modulus = (function(_, window, undefined){
       }).join(" ");
     };
 
-    var create = function(sandbox, module, data){
-      var module_interface = module.call(sandbox, sandbox, data);
-      var module_event_data = {
-        path: sandbox.path,
-        name: sandbox.module_name,
-        module: module_interface
-      };
-      sandbox.pub(helpers.module_ready_event_name(sandbox.path), module_event_data, {is_state: true});
-      debug("ready_module", sandbox.path);
-      return module_interface;
-    };
-
-    var sandboxes_tree = {
+    var all_sandboxes = {
       root: null,
+      list: {},
       get: function(module_path){
         if(!module_path){
           return this.root;
         }
-        var root = this.root;
-        _.find(module_path.split("."), function(name){
-          if(root[name]){
-            root = root[name];
-          } else {
-            root = null;
-            return true;
-          }
-        });
-        return root;
+        return this.list[module_path] || null;
       },
       add: function(description, sandbox){
         if(this.root === null){
-          this.root = {
-            sandbox: sandbox
-          };
-          sandbox.root = true;
-          return;
+          this.root = sandbox;
+          return true;
+        } else if(!this.list[description.path]){
+          this.list[description.path] = sandbox;
+          return true;
         }
-        var root = this.root;
-        _.each(description.path.split("."), function(name){
-          if(!root[name]){
-            root[name] = {
-              sandbox: null
-            };
-          }
-          root = root[name];
-        });
-        root.sandbox = sandbox;
+        return false;
       }
     };
 
+
     sandboxes.trail(function(sandbox, description, actions){
-      sandboxes_tree.add(description, sandbox);
+      if(!all_sandboxes.add(description, sandbox)){
+        return;
+      }
       if(sandbox.name !== ""){
         return;
       }
@@ -346,48 +326,118 @@ var modulus = (function(_, window, undefined){
       };
 
       actions.push(function(module_path, module, new_description){
-        if(!_.isString(module_path) || !_.isFunction(module)){
+        if(!_.isString(module_path) || !_.isFunction(module) || all_sandboxes.list[module_path]){
           return;
         }
         var description = _helpers.cast_description(module_path, new_description);
         var self = this;
         debug("pending_module", description);
-        this.wait(modules_ready_events(description.require), function(modules){
-          var parent = sandboxes_tree.get(description.parent);
+        var events = modules_ready_events(description.require) || "";
+        events = description.init_event ? events + " " + description.init_event : events;
+        this.wait(events, function(modules){
+          var parent = all_sandboxes.get(description.parent);
           var module_sandbox = sandboxes.create(description);
 
-          module_sandbox[description.parent] = parent.sandbox.module;
+          module_sandbox[description.parent] = parent.module;
           module_sandbox.parent = parent;
-
           _.each(modules, function(info){
-            var root_name = info.path.split(".")[0];
-            module_sandbox[root_name] = sandboxes_tree.get(root_name).module;
-            var alliace = description.alliaces[info.path] || alliaces[info.path];
-            if(alliace){
-              module_sandbox[alliace] = info.module;
+            if(info.path){
+              var root_name = info.path.split(".")[0];
+              module_sandbox[root_name] = all_sandboxes.get(root_name).module;
+              var alliace = description.alliaces[info.path] || alliaces[info.path];
+              if(alliace){
+                module_sandbox[alliace] = info.module;
+              };
             }
           });
-          module_sandbox.module = create(module_sandbox, module);
-          if(parent.sandbox.module){
-            parent.sandbox.module[module_sandbox.module_name] = module_sandbox.module;
+
+          module_sandbox.module = module.call(module_sandbox, module_sandbox);
+          module_sandbox[module_sandbox.module_name] = module_sandbox.module;
+
+          if(parent.module){
+            parent.module[module_sandbox.module_name] = module_sandbox.module;
+          } else {
+            parent[module_sandbox.module_name] = module_sandbox.module;
           }
+          var module_ready_event_data = {
+            path: module_sandbox.path,
+            name: module_sandbox.module_name,
+            module: module_sandbox.module
+          };
+          module_sandbox.pub(
+            helpers.module_ready_event_name(module_sandbox.path), 
+            module_ready_event_data, 
+            {is_state: true}
+          );
+          parent.pub(parent.path + ":child:ready", module_ready_event_data);
           debug("ready_module", description.path);
         });
       });
     });
     return function(module_path){
-      return sandboxes_tree.get(module_path);
+      return all_sandboxes.get(module_path);
     };
+  }());
+
+  var sandbox_extentions = (function(){
+    var extentions = {
+      _root: {
+        extention: {}
+      },
+      add: function(path, extention){
+        if(path === ""){
+          _.extend(this.root.extention, extention);
+        }
+        var ext_root = this._root;
+        _.each(path.split("."), function(name){
+          if(!ext_root[name]){
+            ext_root[name] = {
+              extention: {}
+            };
+          }
+          ext_root = ext_root[name];
+        });
+        _.extend(ext_root.extention, extention);
+      },
+      get: function(path){
+        var extentions = [{}];
+        var ext_root = this._root;
+        _.find(path.split("."), function(name){
+          if(ext_root){
+            extentions.push(ext_root.extention);
+            ext_root = ext_root[name];
+          } else {
+            return true;
+          }
+        });
+        if(extentions.length !== 0){
+          return _.extend.apply(_, [{}].concat(extentions));
+        }
+        return null;
+      }
+    };
+    var add_extention = function(extention){
+      extentions.add(this.path || "", extention || {});
+    };
+    sandboxes.trail(function(sandbox, description, actions){
+      if(description.path){
+        var sandbox_extention = extentions.get(description.path);
+        if(sandbox_extention){
+          _.extend(sandbox, sandbox_extention);
+        }
+        sandbox.extention = add_extention;
+      }
+    });
+    return extentions;
   }());
 
   var module_dom_element_selector = (function(){
     sandboxes.trail(function(sandbox){
       sandbox.module_dom_element_selector = function(){
         return this.path.replace(/\:/g, "\\:");
-      }
+      };
     });
   }());
-
   
   var tests = (function(){
     var tests_data = {};
