@@ -310,10 +310,7 @@ var modulus = (function(_, window, undefined){
       if(!all_sandboxes.add(description, sandbox)){
         return;
       }
-      if(sandbox.name !== ""){
-        return;
-      }
-
+      
       sandbox.create_aliace = function(aliace){
         alliaces[this.path] = aliace;
       };
