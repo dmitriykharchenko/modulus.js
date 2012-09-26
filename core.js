@@ -347,7 +347,7 @@ var modulus = (function(_, window, undefined){
             init_data = modules[description.init_event];
           }
 
-          module_sandbox.module = module.call(module_sandbox, module_sandbox);
+          module_sandbox.module = module.call(module_sandbox, module_sandbox, init_data);
           module_sandbox[module_sandbox.module_name] = module_sandbox.module;
 
           if(parent.module){
