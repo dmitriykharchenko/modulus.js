@@ -343,7 +343,7 @@ var modulus = (function(_, window, undefined){
 
           var init_data = {};
 
-          if(description.init_event]){
+          if(description.init_event){
             init_data = modules[description.init_event];
           }
 
