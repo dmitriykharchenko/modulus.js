@@ -147,7 +147,7 @@ var modulus = (function(_, window, undefined){
       }
       params = params || {is_wait: false};
       params.is_wait = params.is_wait && _.isFunction(handler);
-      var all_events = events.split(" ");
+      var all_events = _.compact(events.split(/\s+/));
       if(params.is_wait){
         var waiter = handler;
         var event_data = {};
