@@ -436,7 +436,7 @@ var modulus = (function(_, window, undefined){
         return "data-" + this.path.replace(/\./g, '-');
       };
       sandbox.self_attr_dom_selector = function(){
-        return "[" + this.module_data_attr() + "]";
+        return "[" + this.self_data_attr() + "]";
       };
     });
   }());
