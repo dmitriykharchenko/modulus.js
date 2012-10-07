@@ -427,10 +427,16 @@ var modulus = (function(_, window, undefined){
     return extentions;
   }());
 
-  var module_dom_element_selector = (function(){
+  var module_dom_selectors = (function(){
     sandboxes.trail(function(sandbox){
-      sandbox.module_dom_element_selector = function(){
+      sandbox.self_markup_dom_selector = function(){
         return this.path.replace(/\:/g, "\\:");
+      };
+      sandbox.self_data_attr = function(){
+        return "data-" + this.path.replace(/\./g, '-');
+      };
+      sandbox.self_attr_dom_selector = function(){
+        return "[" + this.module_data_attr() + "]";
       };
     });
   }());
