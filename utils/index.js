@@ -1,4 +1,4 @@
-NANO("utils", function(NANO){
+M("utils", function(M){
   var utils = {};
   return utils;
 });
