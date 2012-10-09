@@ -453,6 +453,14 @@ var modulus = (function(_, window, undefined){
         sandbox: modules.get(path)
       };
     };
+    test.core_inner = {
+      sandboxes: sandboxes,
+      events: events,
+      modules: modules,
+      module_dom_selectors: module_dom_selectors,
+      sandbox_extentions: sandbox_extentions,
+      debug: debug
+    };
     sandboxes.trail(function(sandbox){
       sandbox.test = is_test_mode ? test : function(){};
     });
