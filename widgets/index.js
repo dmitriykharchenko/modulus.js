@@ -19,13 +19,15 @@ M("widgets", function(M){
       selector: selector
     });
     _.each(handlers, function(handler){
-      M.sub(name, function(){
-        handler($(selector || "body"));
+      M.sub(name, function(data){
+        data = data || {};
+        handler(data.layout || $(selector || data.selector || "body"));
       });
     });
   };
 
   autoinit.add_event("dom:ready", "body");
+  autoinit.add_event("refresh:widgets", "body");
 
   var auto_create = function(constructor, init_event){
     var name = this.path;
