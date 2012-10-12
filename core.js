@@ -432,11 +432,11 @@ var modulus = (function(_, window, undefined){
       sandbox.self_markup_dom_selector = function(){
         return this.path.replace(/\:/g, "\\:");
       };
-      sandbox.self_data_attr = function(){
-        return "data-" + this.path.replace(/\./g, '-');
+      sandbox.self_data_attr_name = function(){
+        return this.path.replace(/\./g, '-');
       };
       sandbox.self_attr_dom_selector = function(){
-        return "[" + this.self_data_attr() + "]";
+        return "[data-" + this.self_data_attr() + "]";
       };
     });
   }());

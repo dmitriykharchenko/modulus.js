@@ -27,11 +27,11 @@ M("widgets", function(M){
   };
 
   autoinit.add_event("dom:ready", "body");
-  autoinit.add_event("refresh:widgets", "body");
+  autoinit.add_event("init:widgets", "body");
 
   var auto_create = function(constructor, init_event){
     var name = this.path;
-    var data_attr_name = this.path.replace(/\./g, "-");
+    var data_attr_name = this.self_data_attr_name();
     var selector = "[data-" + data_attr_name + "]";
 
     var widget_list = {};
