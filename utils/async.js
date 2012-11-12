@@ -1,3 +1,5 @@
+//= require nano_ui/utils/index
+
 NANO("utils.async", function(NANO){
   var batch_balancer = function(){};
   batch_balancer.prototype = {
@@ -97,7 +99,7 @@ NANO("utils.async", function(NANO){
 
 
   var worker = function(data){
-    this._last_iteration = async_iterate(data);
+    this._last_iteration = async_iterate(data || []);
   };
 
   worker.prototype = {
@@ -107,9 +109,10 @@ NANO("utils.async", function(NANO){
         next_iteration(state.result);
       });
       this._last_iteration = new_iteration;
+      return this;
     },
     then: function(handler){
-      this._push({
+      return this._push({
         complete: function(state){
           var data = handler(state.result);
           if(data){
@@ -119,7 +122,7 @@ NANO("utils.async", function(NANO){
       });
     },
     each: function(iterator){
-      this._push({
+      return this._push({
         iterator: function(value, index){
           var data = iterator(value, index);
           if(data === false){
@@ -129,7 +132,7 @@ NANO("utils.async", function(NANO){
       });
     },
     map: function(iterator){
-      this._push({
+      return this._push({
         iterator: function(value, index){
           return iterator(value, index);
         }
@@ -137,7 +140,7 @@ NANO("utils.async", function(NANO){
     },
     reduce: function(iterator){
       var summary;
-      this._push({
+      return this._push({
         iterator: function(value, index){
           summary = iterator(value, index, summary);
         },
@@ -148,7 +151,7 @@ NANO("utils.async", function(NANO){
     },
     find: function(iterator){
       var found;
-      this._push({
+      return this._push({
         iterator: function(value, index){
           if(iterator(value, index)){
             found = value;
@@ -160,7 +163,7 @@ NANO("utils.async", function(NANO){
       });
     },
     complete: function(handler){
-      this._push({
+      return this._push({
         complete: function(state){
           handler(state.result);
         }
@@ -169,6 +172,3 @@ NANO("utils.async", function(NANO){
   };
   return worker;
 });
-
-
-NANO.utils.async([]).each(function(){}).map().value();
