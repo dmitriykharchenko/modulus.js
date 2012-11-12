@@ -117,7 +117,7 @@ var modulus = (function(_, window, undefined){
     if(window.addEventListener){
       window.addEventListener("message", handle_message, true);
     }else if (window.attachEvent) {   // IE before version 9
-      zero_timeouts_count = 10;
+      zero_timeouts_count = 0;
       window.attachEvent("onmessage", handle_message);
     }
 
@@ -368,6 +368,13 @@ var modulus = (function(_, window, undefined){
           parent.pub(parent.path + ":child:ready", module_ready_event_data);
           debug("ready_module", description.path);
         });
+      });
+
+      
+      actions.push(function(anonym_module, description){
+        if(!_.isFunction(anonym_module)){
+          return;
+        }
       });
     });
     return function(module_path){
