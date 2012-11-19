@@ -1,38 +1,28 @@
 //= require nano_ui/utils/index
 
 NANO("utils.async", function(NANO){
-  var batch_balancer = function(){};
-  batch_balancer.prototype = {
-    _start_time: 0,
-    _end_time: 0,
-    _limit: 30,
-    _last_batch_size: 0,
-    batch_size: function(){
-      if(this._last_batch_size === 0){
-        this._last_batch_size = 1;
+  var BatchBalancer = function(limit){
+    this._start_time = +new Date();
+    this._limit = limit || 50;
+  };
+  BatchBalancer.prototype = {
+    start: function(callback){
+      var call_date = +new Date();
+      if(this._limit < (call_date - this._start_time)){
+        this._start_time = call_date;
+        NANO.set_zero_timeout(callback);
       } else {
-        var time = Math.max(this._end_time - this._start_time, 1);
-        this._last_batch_size = Math.max((this._limit / time) * this._last_batch_size, 1);
+        callback();
       }
-      return this._last_batch_size;
-    },
-    start: function(){
-      this._start_time = +new Date();
-    },
-    stop: function(){
-      this._end_time = +new Date();
     }
   };
 
   var async_iterate = function(iterator, complete){
     var keys;
-    var is_stop = false;
-    var balancer = new batch_balancer();
-    var state = {};
-    if(!_.isFunction(iterator)){
-      state.is_complete = true;
-      is_stop = true;
-    }
+    var balancer = null;
+    var state = {
+      is_complete: false
+    };
 
     var complete_handlers = [];
 
@@ -40,73 +30,76 @@ NANO("utils.async", function(NANO){
       complete_handlers.push(complete);
     }
 
-    var iteration_complete = function(){
-      state.is_complete = true;
-      is_stop = true;
+    var call_complete_handlers = function(){
       if(0 < complete_handlers.length){
         var handler = complete_handlers.shift();
-        _.defer(function(){
-          handler(state);
-          iteration_complete();
-        });
-      }
-    };
-
-    var iteration = function(){
-      var next_index = null;
-      var batch_size = balancer.batch_size();
-      balancer.start();
-      while(batch_size){
-        next_index = keys.shift();
-        if(!_.isUndefined(next_index) && !is_stop){
-          var result = iterator.call(state, state.data[next_index], next_index);
-          if(result){
-            state.result[next_index] = result;
-          }
-          batch_size --;
-        } else {
-          iteration_complete();
-          return state;
-        }
-      }
-      balancer.stop();
-      NANO.set_zero_timeout(iteration);
-    };
-
-    iteration.iterator = iterator;
-    iteration.complete = function(handler){
-      if(state.is_complete){
         handler(state);
-      } else {
-        complete_handlers.push(handler);
+        call_complete_handlers();
       }
     };
-    iteration.stop = function(){
-      is_stop = true;
-    };
-    iteration.state = state;
-    return function(data){
-      state.data = data;
-      if(state.is_complete){
+
+    var iteration_complete = function(){
+      if(!state.result){
         state.result = state.data;
-        iteration_complete();
+      }
+      call_complete_handlers();
+    };
+    var iteration = _.isFunction(iterator) ? function(){      
+      if(keys.length !== 0 && !state.is_complete){
+        var next_index = keys.shift();
+        var result = iterator(state.data[next_index], next_index);
+        if(result !== undefined){
+          if(!state.result){
+            state.result = _.isArray(state.data) ? [] : {};
+          }
+          state.result[next_index] = result;
+        }
       } else {
-        keys = data ? _.keys(data) : [];
-        iteration();
+        state.is_complete = true;
+        iteration_complete();
+        return state;
+      }
+      balancer.start(iteration);
+    } : function(){
+      state.is_complete = true;
+      state.result = state.data;
+      iteration_complete();
+      return state;
+    };
+
+    var iteration_initializer = function(data, batch_balancer){
+      balancer = batch_balancer || new BatchBalancer();
+      state.data = data;
+      keys = _.isArray(data) || _.isObject(data) ? _.keys(state.data) : [];
+      balancer.start(iteration);
+    };
+
+    iteration_initializer.iterator = iterator;
+    iteration_initializer.complete = function(handler){
+      complete_handlers.push(handler);
+      if(state.is_complete){
+        iteration_complete();
       }
     };
+    iteration_initializer.stop = function(){
+      state.is_complete = true;
+    };
+    iteration_initializer.state = state;
+    return iteration_initializer;
   };
 
 
-  var worker = function(data){
-    this._last_iteration = async_iterate(data || []);
+  var Worker = function(data){
+    this._last_iteration = async_iterate();
+    this._last_iteration(data || []);
+    this._balancer = new BatchBalancer();
   };
 
-  worker.prototype = {
+  Worker.prototype = {
     _push: function(data){
       var new_iteration = async_iterate(data.iterator, data.complete);
       this._last_iteration.complete(function(state){
-        next_iteration(state.result);
+        new_iteration(state.result, self._balancer);
       });
       this._last_iteration = new_iteration;
       return this;
@@ -115,9 +108,14 @@ NANO("utils.async", function(NANO){
       return this._push({
         complete: function(state){
           var data = handler(state.result);
-          if(data){
-            state.result = data;
-          }
+          state.result = !_.isUndefined(data) ? data : state.data;
+        }
+      });
+    },
+    pick: function(data){
+      return this._push({
+        complete: function(state){
+          state.result = data;
         }
       });
     },
@@ -133,9 +131,7 @@ NANO("utils.async", function(NANO){
     },
     map: function(iterator){
       return this._push({
-        iterator: function(value, index){
-          return iterator(value, index);
-        }
+        iterator: iterator
       });
     },
     reduce: function(iterator){
@@ -170,5 +166,7 @@ NANO("utils.async", function(NANO){
       });
     }
   };
-  return worker;
+  return function(data){
+    return new Worker(data);
+  };
 });
