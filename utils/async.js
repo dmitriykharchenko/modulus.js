@@ -1,6 +1,6 @@
 //= require nano_ui/utils/index
 
-NANO("utils.async", function(NANO){
+M("utils.async", function(M){
   var BatchBalancer = function(limit){
     this._start_time = +new Date();
     this._limit = limit || 50;
@@ -10,7 +10,7 @@ NANO("utils.async", function(NANO){
       var call_date = +new Date();
       if(this._limit < (call_date - this._start_time)){
         this._start_time = call_date;
-        NANO.set_zero_timeout(callback);
+        M.set_zero_timeout(callback);
       } else {
         callback();
       }
