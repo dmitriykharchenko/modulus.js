@@ -1,5 +1,7 @@
 //core
 var modulus = (function(_, window, undefined){
+
+  // allways in test mode
   var is_test_mode = true || window.TESTMODE || /_testmode_/g.test(location.search) || false;
   var reserved_names = [];
 
@@ -48,9 +50,34 @@ var modulus = (function(_, window, undefined){
   }());
 
   var sandboxes = (function(){
-    var trailers = [];
+    var constructors = [];
+    var actions = [];
+    var sandboxes = [];
 
-    trailers.push(function(sandbox, description){
+    var add_constructor = function(constructor){
+      _.each(sandboxes, function(sandbox){
+        constructor.apply(sandbox, sandbox, sandbox.sandbox_description);
+      });
+      constructors.push(constructor);
+    };
+
+    var call_sandbox_actions = function(){};
+
+    var add_action = function(action){
+      _.each(sandboxes, function(sandbox){
+        sandbox.calls = [];
+        _.each(sandbox.calls, function(call){
+          _.delay(function(){
+            if(action.apply(sandbox, call) === false){
+              sandbox.calls.push(call);
+            }
+          });
+        });
+      });
+      actions.push(action);
+    };
+
+    add_constructor(function(sandbox, description){
       _.extend(sandbox, {
         module_name: description.name,
         path: description.path,
@@ -59,25 +86,36 @@ var modulus = (function(_, window, undefined){
     });
 
     var create_sandbox = function(description){
-      var actions = [];
       var sandbox = function(){
         var sandbox_arguments = arguments;
         _.each(actions, function(action){
-          action.apply(sandbox, sandbox_arguments);
+          if(action.apply(sandbox, sandbox_arguments) === false){
+            sandbox.calls = sandbox.calls || [];
+            sandbox.calls.push(sandbox_arguments);
+          }
         });
       };
       sandbox.debug = debug;
-      _.each(trailers, function(trailer){
-        sandbox = trailer(sandbox, description, actions) || sandbox;
+      _.each(constructors, function(constructor){
+        constructor.apply(sandbox, sandbox, description);
       });
       return sandbox;
     };
     return {
       create: create_sandbox,
-      trail: function(trailer){
-        trailers.push(trailer);
-      }
+      add_action: add_action,
+      add_constructor: add_constructor
     };
+  }());
+
+  var expose_sandbox_methods = (function(){
+    sandboxes.add_action(function(){
+      maethod_name = arguments[0];
+      if(!(method_name in sandboxes)){
+        return false;
+      }
+      return sandboxes[method_name].apply(this, _.rest(arguments));
+    });
   }());
 
   var set_zero_timeout = (function(sandbox){
@@ -122,10 +160,10 @@ var modulus = (function(_, window, undefined){
     }
 
     reserved_names.push("set_zero_timeout");
-    sandboxes.trail(function(sandbox){
+    sandboxes.add_constructor(function(sandbox){
       sandbox.set_zero_timeout = set_zero_timeout;
     });
-   
+    
     return set_zero_timeout;
   }());
   
@@ -225,7 +263,7 @@ var modulus = (function(_, window, undefined){
       }
     };
 
-    sandboxes.trail(function(sandbox){
+    sandboxes.add_constructor(function(sandbox){
       sandbox.unsub = sandbox.unbind = events.unbind;
       sandbox.sub = sandbox.bind = events.bind;
       sandbox.pub = sandbox.trigger = events.trigger;
@@ -234,7 +272,7 @@ var modulus = (function(_, window, undefined){
     return events;
   }());
 
-   var modules = (function(){
+  var modules = (function(){
     var alliaces = {};
     var _helpers = {
       is_valid_name: function(name){
@@ -305,77 +343,70 @@ var modulus = (function(_, window, undefined){
       }
     };
 
+    sandboxes.add_action(function(module_path, module, new_description){
+      if(!_.isString(module_path) || !_.isFunction(module) || all_sandboxes.list[module_path]){
+        return false;
+      } else if(!this.wait){
+        return false;
+      }
+      var description = _helpers.cast_description(module_path, new_description);
+      debug("pending_module", description);
+      var events = modules_ready_events(description.require) || "";
+      events = description.init_event ? events + " " + description.init_event : events;
+      this.wait(events, function(modules){
+        var parent = all_sandboxes.get(description.parent);
+        var module_sandbox = sandboxes.create(description);
 
-    sandboxes.trail(function(sandbox, description, actions){
+        module_sandbox[description.parent] = parent.module;
+        module_sandbox.parent = parent;
+        _.each(modules, function(info){
+          if(info.path){
+            var root_name = info.path.split(".")[0];
+            module_sandbox[root_name] = all_sandboxes.get(root_name).module;
+            var alliace = description.alliaces[info.path] || alliaces[info.path];
+            if(alliace){
+              module_sandbox[alliace] = info.module;
+            }
+          }
+        });
+
+        var init_data = {};
+
+        if(description.init_event){
+          init_data = modules[description.init_event];
+        }
+
+        module_sandbox.module = module.call(module_sandbox, module_sandbox, init_data);
+        module_sandbox[module_sandbox.module_name] = module_sandbox.module;
+
+        if(parent.module){
+          parent.module[module_sandbox.module_name] = module_sandbox.module;
+        } else {
+          parent[module_sandbox.module_name] = module_sandbox.module;
+        }
+        var module_ready_event_data = {
+          path: module_sandbox.path,
+          name: module_sandbox.module_name,
+          module: module_sandbox.module
+        };
+        module_sandbox.pub(
+          helpers.module_ready_event_name(module_sandbox.path),
+          module_ready_event_data,
+          {is_state: true}
+        );
+        parent.pub(parent.path + ":child:ready", module_ready_event_data);
+        debug("ready_module", description.path);
+      });
+    });
+
+
+    sandboxes.add_constructor(function(sandbox, description, actions){
       if(!all_sandboxes.add(description, sandbox)){
         return;
       }
-      
       sandbox.create_aliace = function(aliace){
         alliaces[this.path] = aliace;
       };
-
-      actions.push(function(module_path, module, new_description){
-        if(!_.isString(module_path) || !_.isFunction(module) || all_sandboxes.list[module_path]){
-          return;
-        }
-        var description = _helpers.cast_description(module_path, new_description);
-        var self = this;
-        debug("pending_module", description);
-        var events = modules_ready_events(description.require) || "";
-        events = description.init_event ? events + " " + description.init_event : events;
-        this.wait(events, function(modules){
-          var parent = all_sandboxes.get(description.parent);
-          var module_sandbox = sandboxes.create(description);
-
-          module_sandbox[description.parent] = parent.module;
-          module_sandbox.parent = parent;
-          _.each(modules, function(info){
-            if(info.path){
-              var root_name = info.path.split(".")[0];
-              module_sandbox[root_name] = all_sandboxes.get(root_name).module;
-              var alliace = description.alliaces[info.path] || alliaces[info.path];
-              if(alliace){
-                module_sandbox[alliace] = info.module;
-              };
-            }
-          });
-
-          var init_data = {};
-
-          if(description.init_event){
-            init_data = modules[description.init_event];
-          }
-
-          module_sandbox.module = module.call(module_sandbox, module_sandbox, init_data);
-          module_sandbox[module_sandbox.module_name] = module_sandbox.module;
-
-          if(parent.module){
-            parent.module[module_sandbox.module_name] = module_sandbox.module;
-          } else {
-            parent[module_sandbox.module_name] = module_sandbox.module;
-          }
-          var module_ready_event_data = {
-            path: module_sandbox.path,
-            name: module_sandbox.module_name,
-            module: module_sandbox.module
-          };
-          module_sandbox.pub(
-            helpers.module_ready_event_name(module_sandbox.path), 
-            module_ready_event_data, 
-            {is_state: true}
-          );
-          parent.pub(parent.path + ":child:ready", module_ready_event_data);
-          debug("ready_module", description.path);
-        });
-      });
-
-      
-      actions.push(function(anonym_module, description){
-        if(!_.isFunction(anonym_module)){
-          return;
-        }
-      });
     });
     return function(module_path){
       return all_sandboxes.get(module_path);
@@ -422,7 +453,7 @@ var modulus = (function(_, window, undefined){
     var add_extention = function(extention){
       extentions.add(this.path || "", extention || {});
     };
-    sandboxes.trail(function(sandbox, description, actions){
+    sandboxes.add_constructor(function(sandbox, description, actions){
       if(description.path){
         var sandbox_extention = extentions.get(description.path);
         if(sandbox_extention){
@@ -435,7 +466,7 @@ var modulus = (function(_, window, undefined){
   }());
 
   var module_dom_selectors = (function(){
-    sandboxes.trail(function(sandbox){
+    sandboxes.add_constructor(function(sandbox){
       sandbox.self_markup_dom_selector = function(){
         return this.path.replace(/\:/g, "\\:");
       };
@@ -468,7 +499,7 @@ var modulus = (function(_, window, undefined){
       sandbox_extentions: sandbox_extentions,
       debug: debug
     };
-    sandboxes.trail(function(sandbox){
+    sandboxes.add_constructor(function(sandbox){
       sandbox.test = is_test_mode ? test : function(){};
     });
   }());
