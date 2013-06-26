@@ -1,7 +1,14 @@
 //core
 var modulus = (function(_, window, undefined){
-  var is_test_mode = true || window.TESTMODE || /_testmode_/g.test(location.search) || false;
+  var is_test_mode = window.TESTMODE || /_testmode_/g.test(location.search) || false;
+
+  // words, witch can't be usead as application module name
   var reserved_names = [];
+
+
+  // Debug core module, usefull for logging application events.
+  // Helps to find uninitialized modules and some performance lacks
+  // works only if test mode was enabled for performance reasons
 
   var debug = !is_test_mode ? function(){} : (function(){
     var state = {
@@ -13,6 +20,11 @@ var modulus = (function(_, window, undefined){
     };
 
     var loggers = {
+
+      // default logger for all kind of events,
+      // logs time, data, and name of event.
+      // writes events in different logs
+
       log: function(log_type){
         var data = _.rest(arguments);
         if(!state.logs[log_type]){
@@ -25,11 +37,20 @@ var modulus = (function(_, window, undefined){
           data: data
         });
       },
+
+      // logger for pending modules
+      // indicates witch modules are waiting for their depencies
+
       pending_module: function(description){
         var data = _.clone(description);
         data.pending_time = +new Date();
         state.modules.pending[data.path] = data;
       },
+
+      // logger for ready modules
+      // removes info about module from pending modules log and ads to 
+      // ready modules log
+
       ready_module: function(name){
         var pending_data = state.modules.pending[name] || {};
         pending_data.ready_time = +new Date();
@@ -47,8 +68,20 @@ var modulus = (function(_, window, undefined){
     return debug_interface;
   }());
 
+
+  // sandboxes core module
+  // creates sandboxes for application modules,
+  // and extends it with new functionality,
+  // witch may be appended by another core modules.
+
   var sandboxes = (function(){
+
+    // set of functions for extend sanbox
+    // they accepts following arguments: sandbox, description and set of sandbox actions (array)
     var trailers = [];
+
+    // first trailer function, 
+    // witch appends to sandbox the module name, module path and discription of this sandbox
 
     trailers.push(function(sandbox, description){
       _.extend(sandbox, {
@@ -58,15 +91,27 @@ var modulus = (function(_, window, undefined){
       });
     });
 
+    // sanbox creation function.
+    // sandbox is javascript function extended with some special fields
+    // action of sandbox function may be extended by trailer function.
+
     var create_sandbox = function(description){
       var actions = [];
+
+      // creating sandbox itself.
+      // just a simple function, witch can call own set of actions
+
       var sandbox = function(){
         var sandbox_arguments = arguments;
         _.each(actions, function(action){
           action.apply(sandbox, sandbox_arguments);
         });
       };
+
+      // exposiong debug module to every sandbox
       sandbox.debug = debug;
+
+      // extending sandbox by set of trail functions
       _.each(trailers, function(trailer){
         sandbox = trailer(sandbox, description, actions) || sandbox;
       });
@@ -79,6 +124,10 @@ var modulus = (function(_, window, undefined){
       }
     };
   }());
+  
+
+  // usefull core module for asyncronus work
+  // allows to call asyncronus code faster than setTimeout with zero delay
 
   var set_zero_timeout = (function(sandbox){
     var timeouts = [];
@@ -86,6 +135,10 @@ var modulus = (function(_, window, undefined){
 
     var zero_timeouts_count = 1000;
     var counter = 0;
+
+    // every 1000 times call old setTimeout.
+    // To prevent errors in slow browsers like IE.
+
     var set_zero_timeout = function(fn) {
       counter--;
       if(counter < 0){
@@ -122,6 +175,10 @@ var modulus = (function(_, window, undefined){
     }
 
     reserved_names.push("set_zero_timeout");
+
+    // append trail function to sandboxes module,
+    // adds set_zero_timeout to every sandbox.
+
     sandboxes.trail(function(sandbox){
       sandbox.set_zero_timeout = set_zero_timeout;
     });
@@ -129,18 +186,33 @@ var modulus = (function(_, window, undefined){
     return set_zero_timeout;
   }());
   
+
   var helpers = {
+    // generates module ready event
     module_ready_event_name: function(path){
       return ["module", path || "core", "ready"].join(":");
     }
   };
 
+
+  // module for supporting application events
   var events = (function(){
+
+    //adds more reserved names
     reserved_names = reserved_names.concat(["unbind", "bind", "trigger", "pub", "sub", "unsub", "wait"]);
+
+    // stores handlers and states
+    // state is last data of some event.
     var events_hash = {
       handlers: {},
       states: {}
     };
+
+    // prepares params to easilly bind handler to set of events
+    // If params have is_wait field set to true, 
+    // then handler fires only after all events has been fired, not after every,
+    // usefull when you need to wait for some depencies
+
     var prepare_bind_params = function(events, handler, params){
       if(!_.isString(events)){
         return events;
@@ -169,6 +241,8 @@ var modulus = (function(_, window, undefined){
       return bind_hash;
     };
 
+    // calls handler and logs time of it execution
+
     var handler_call = function(handler, name, data){
       var start = +new Date();
       var event_data = {name: name};
@@ -183,6 +257,10 @@ var modulus = (function(_, window, undefined){
       debug("logs", "execution time", +new Date() - start, name, handler);
     };
 
+    // events module interface with familiar bing, unbind, trigger methods
+    // and also wait method, witch is shortcut to calling bind method with is_wait param.
+    // bind and trigger methods logs events names and passed arguments
+
     var events = {
       bind: function(events, handler, params){
         debug("logs", "bind", arguments, this.name);
@@ -196,6 +274,7 @@ var modulus = (function(_, window, undefined){
           events_hash.handlers[name][handler.id] = handler;
         });
       },
+
       unbind: function(event_name, handler){
         var id = handler.id;
         if(!id || !events_hash.handlers[event_name]){
@@ -203,6 +282,7 @@ var modulus = (function(_, window, undefined){
         }
         delete events_hash.handlers[event_name][id];
       },
+
       trigger: function(event_name, data, params){
         debug("logs","trigger", arguments, this.name);
         params = params || {};
@@ -220,10 +300,15 @@ var modulus = (function(_, window, undefined){
           });
         });
       },
+
       wait: function(events_list, handler, options){
         return !!events_list ? events.bind(events_list, handler, _.extend(options || {}, {is_wait: true})) : handler({});
       }
     };
+
+
+    // trail function, appends events support to every sandbox,
+    // also creates alliaces for events methods
 
     sandboxes.trail(function(sandbox){
       sandbox.unsub = sandbox.unbind = events.unbind;
@@ -234,12 +319,23 @@ var modulus = (function(_, window, undefined){
     return events;
   }());
 
-   var modules = (function(){
+  
+  // modules core module.
+  // made for support application modules.
+  // For now is the most complex core module.
+
+  var modules = (function(){
     var alliaces = {};
+
     var _helpers = {
+      // check is name is not from reserved_names list
       is_valid_name: function(name){
         return _.indexOf(reserved_names, name) < 0;
       },
+
+      // casts require field from module description,
+      // for easier depencies requiring
+
       cast_require: function(description){
         description.require = description.require || [];
         description.alliaces = {};
@@ -259,6 +355,11 @@ var modulus = (function(_, window, undefined){
           description.require.push(description.parent);
         }
       },
+
+      // casts description
+      // appends parent, name, path fields, 
+      // based on module path
+
       cast_description: function(path, description){
         if(description === undefined){
           description = {};
@@ -278,12 +379,16 @@ var modulus = (function(_, window, undefined){
       }
     };
 
+    // creates module depencies events list to wait for
+
     var modules_ready_events = function(modules_list){
       return _.map(modules_list, function(module_name){
         return helpers.module_ready_event_name(module_name);
       }).join(" ");
     };
 
+
+    // stores application modules sandboxes
     var all_sandboxes = {
       root: null,
       list: {},
@@ -305,16 +410,22 @@ var modulus = (function(_, window, undefined){
       }
     };
 
+    // trail functions witch adds modules support to every sandbox.
+    // after it every sandbox may be root for any number of modules
 
     sandboxes.trail(function(sandbox, description, actions){
+
+      // returns if module with such discription.path already exists 
       if(!all_sandboxes.add(description, sandbox)){
         return;
       }
       
+      // creates aliace for current application module
       sandbox.create_aliace = function(aliace){
         alliaces[this.path] = aliace;
       };
 
+      // action for creating new module
       actions.push(function(module_path, module, new_description){
         if(!_.isString(module_path) || !_.isFunction(module) || all_sandboxes.list[module_path]){
           return;
@@ -322,8 +433,15 @@ var modulus = (function(_, window, undefined){
         var description = _helpers.cast_description(module_path, new_description);
         var self = this;
         debug("pending_module", description);
+
+        // depency ready events
         var events = modules_ready_events(description.require) || "";
         events = description.init_event ? events + " " + description.init_event : events;
+
+        // after all depency are ready, sandbox starts creation of new module.
+        // handler creates module sandbox, extends it with all depencies,
+        // if module have init_event, handler ads data from event to module function.
+
         this.wait(events, function(modules){
           var parent = all_sandboxes.get(description.parent);
           var module_sandbox = sandboxes.create(description);
@@ -355,17 +473,23 @@ var modulus = (function(_, window, undefined){
           } else {
             parent[module_sandbox.module_name] = module_sandbox.module;
           }
+
           var module_ready_event_data = {
             path: module_sandbox.path,
             name: module_sandbox.module_name,
             module: module_sandbox.module
           };
+
+          // pubs module ready events
+
           module_sandbox.pub(
             helpers.module_ready_event_name(module_sandbox.path), 
             module_ready_event_data, 
             {is_state: true}
           );
           parent.pub(parent.path + ":child:ready", module_ready_event_data);
+
+          // logs ready module event
           debug("ready_module", description.path);
         });
       });
@@ -377,10 +501,17 @@ var modulus = (function(_, window, undefined){
         }
       });
     });
+
+    // core module interface
+    // returns application modules sandboxes by paths
     return function(module_path){
       return all_sandboxes.get(module_path);
     };
   }());
+
+
+  // core module that allows to make sandbox extentions for child modules.
+  // Those extentions are available only for child modules through their sandboxes.
 
   var sandbox_extentions = (function(){
     var extentions = {
@@ -419,9 +550,11 @@ var modulus = (function(_, window, undefined){
         return null;
       }
     };
+
     var add_extention = function(extention){
       extentions.add(this.path || "", extention || {});
     };
+
     sandboxes.trail(function(sandbox, description, actions){
       if(description.path){
         var sandbox_extention = extentions.get(description.path);
@@ -433,6 +566,11 @@ var modulus = (function(_, window, undefined){
     });
     return extentions;
   }());
+
+
+  
+  // tiny core module, that appends set of helpers 
+  // for dom manipulation to every sandbox
 
   var module_dom_selectors = (function(){
     sandboxes.trail(function(sandbox){
@@ -447,7 +585,11 @@ var modulus = (function(_, window, undefined){
       };
     });
   }());
-  
+
+
+  // core module made to help testing appliction module and core itself
+  // exposes core modules and gives interface to expose application modules internals
+
   var tests = (function(){
     var tests_data = {};
     reserved_names.push("test");
@@ -473,13 +615,11 @@ var modulus = (function(_, window, undefined){
     });
   }());
 
-  _.templateSettings = {
-    interpolate : /\{\{(.+?)\}\}/g
-  };
-
+  // The modulus itself eventually is root sandbox
   return sandboxes.create({
     name: "core"
   });
+
 }(_, window));
 
 window.M = modulus;
