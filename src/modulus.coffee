@@ -184,123 +184,15 @@ window.modulus = new () ->
 
 
   # module for supporting application events
+  # injecting mangra events to sandbox
+
   events = new () ->
-
-    # adds more reserved names
-    reserved_names = reserved_names.concat ["unbind", "bind", "trigger", "pub", "sub", "unsub", "wait"]
-
-    # stores handlers and states
-    # state is last data of some event.
-
-    events_hash =
-      handlers: {}
-      states: {}
-
-    # prepares params to easilly bind handler to set of events
-    # If params have is_wait field set to true, 
-    # then handler fires only after all events has been fired, not after every,
-    # usefull when you need to wait for some depencies
-
-    prepare_bind_params = (events, handler, params) ->
-      if not _.isString events
-        return events
-      
-      params = params or { is_wait: false }
-      params.is_wait = params.is_wait && _.isFunction handler
-
-      all_events = _.compact events.split /\s+/
-
-      if params.is_wait
-        waiter = handler
-        event_data = {}
-        handler = (data) ->
-          event = _.last arguments
-          all_events = _.without all_events, event.name
-          event_data[event.name] = data
-
-          if all_events.length is 0
-            waiter event_data,
-              name: events
-
-      bind_hash = {}
-      _.each all_events, (name) ->
-        bind_hash[name] = handler
-
-      bind_hash
-
-
-    # calls handler and logs time of it execution
-
-    handler_call = (handler, name, data) ->
-      start = +new Date()
-      event_data = { name: name }
-      handler_params = []
-
-      if _.isArray data
-        handler_params = data
-      else
-        handler_params.push data
-      
-      handler_params.push event_data
-      handler.apply event_data, handler_params
-      debug "logs", "execution time", +new Date() - start, name, handler
-
-
-    # events module interface with familiar bing, unbind, trigger methods
-    # and also wait method, witch is shortcut to calling bind method with is_wait param.
-    # bind and trigger methods logs events names and passed arguments
-
-    events =
-      bind: (events, handler, params) ->
-        debug "logs", "bind", arguments, @name
-        bind_hash = prepare_bind_params events, handler, params
-
-        _.each bind_hash, (handler, name) ->
-          if events_hash.states[name]
-            handler_call(handler, name, events_hash.states[name]);
-          
-          handler.id = handler.id or _.uniqueId(name + "_handler_")
-
-          events_hash.handlers[name] = events_hash.handlers[name] or {}
-          events_hash.handlers[name][handler.id] = handler
-
-
-      unbind: (event_name, handler) ->
-        id = handler.id
-        if not id or not events_hash.handlers[event_name]
-          return
-  
-        delete events_hash.handlers[event_name][id]
-
-      trigger: (event_name, data, params) ->
-        debug("logs","trigger", arguments, @name)
-
-        params = params or {}
-        data = data or {}
-        if params.is_state
-          events_hash.states[event_name] = data
-        
-        handlers_list = events_hash.handlers[event_name] or {}
-
-        caller = (handler) ->
-          handler_call handler, event_name, data
-
-        _.each handlers_list, if params.is_sync then  caller else (handler) ->
-          set_zero_timeout () ->
-            caller handler
-
-
-      wait: (events_list, handler, options) ->
-        return if events_list then events.bind(events_list, handler, _.extend(options || {}, {is_wait: true})) else handler {}
 
     # trail function, appends events support to every sandbox,
     # also creates alliaces for events methods
 
     sandboxes.trail (sandbox) ->
-      sandbox.unsub = sandbox.unbind = events.unbind;
-      sandbox.sub = sandbox.bind = events.bind;
-      sandbox.pub = sandbox.trigger = events.trigger;
-      sandbox.wait = events.wait;
+      mangra.init sandbox
 
     return events
 
@@ -544,21 +436,6 @@ window.modulus = new () ->
     extentions
 
 
-  
-  # tiny core module, that appends set of helpers 
-  # for dom manipulation to every sandbox
-
-  module_dom_selectors = new () ->
-    sandboxes.trail (sandbox) ->
-      sandbox.self_markup_dom_selector = () ->
-        return @path.replace /\:/g, "\\:"
-
-      sandbox.self_data_attr_name = () ->
-        return @path.replace /\./g, '-' 
-  
-      sandbox.self_attr_dom_selector = () ->
-        return "[data-" + @self_data_attr_name() + "]"
-
 
 
   # core module made to help testing appliction module and core itself
@@ -581,7 +458,6 @@ window.modulus = new () ->
     # exposing core modules
     test.core_inner =
       sandboxes: sandboxes
-      events: events
       modules: modules
       module_dom_selectors: module_dom_selectors
       sandbox_extentions: sandbox_extentions
