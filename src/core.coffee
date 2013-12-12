@@ -98,12 +98,15 @@ window.modulus = new () ->
 
 
       create: create_scope,
+
       trail: (trailer) ->
+
         trailers.push trailer
 
         for scope in scopes
           trailer scope, scope.M_description, scope.M_actions
 
 
-    scope.create
+    root_scope = scope.create
       name: "core"
+      
