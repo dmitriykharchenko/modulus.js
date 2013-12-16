@@ -1,4 +1,2 @@
 .DS_Store
-jquery-1.8.js
-underscore.js
-ninja.js
+node_modules/
