@@ -3,30 +3,29 @@
 # For now is the most complex core module.
 
 new () ->
+
   alliaces = {}
 
+  # logger for pending modules
+  # indicates witch modules are waiting for their depencies
+
+  scope.add_logger "pending_module", (description) ->
+    data = _.clone description
+    data.pending_time = +new Date()
+    state.modules.pending[data.path] = data
+
+
+  # logger for ready modules
+  # removes info about module from pending modules log and ads to 
+  # ready modules log
+
+  scope.add_logger "ready_module", (name) ->
+    pending_data = state.modules.pending[name] or {}
+    pending_data.ready_time = +new Date()
+    state.modules.ready[name] = pending_data
+    delete state.modules.pending[name]
+
   _helpers =
-
-    # logger for pending modules
-    # indicates witch modules are waiting for their depencies
-
-    scope.add_logger "pending_module", (description) ->
-      data = _.clone description
-      data.pending_time = +new Date()
-      state.modules.pending[data.path] = data
-
-
-    # logger for ready modules
-    # removes info about module from pending modules log and ads to 
-    # ready modules log
-    
-    scope.add_logger "ready_module", (name) ->
-      pending_data = state.modules.pending[name] or {}
-      pending_data.ready_time = +new Date()
-      state.modules.ready[name] = pending_data
-      delete state.modules.pending[name]
-
-
     # check is name is not from reserved_names list
 
     is_valid_name: (name) ->
